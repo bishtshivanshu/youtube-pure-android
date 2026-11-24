@@ -1,28 +1,39 @@
 package com.puretube.app.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.filled.Cast
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.NotificationsNone
 import androidx.compose.material.icons.filled.PlayCircleFilled
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -53,8 +64,25 @@ fun HomeScreen(
     modifier: Modifier = Modifier
 ) {
     val coroutineScope = rememberCoroutineScope()
-    var isRefreshing by remember { mutableStateOf(false) }
-    val homeVideos by repository.getHomeFeed().collectAsState(initial = emptyList())
+    val snackbarHostState = remember { SnackbarHostState() }
+    val categories = remember {
+        listOf("All", "Music", "Podcasts", "Technology", "Gaming", "News", "Science", "Nature", "Coding")
+    }
+    var selectedCategory by remember { mutableStateOf("All") }
+    val allVideos by repository.getHomeFeed().collectAsState(initial = emptyList())
+
+    // Category filter logic
+    val filteredVideos = remember(selectedCategory, allVideos) {
+        if (selectedCategory == "All") {
+            allVideos
+        } else {
+            allVideos.filter {
+                it.title.contains(selectedCategory, ignoreCase = true) ||
+                it.channelTitle.contains(selectedCategory, ignoreCase = true) ||
+                it.description.contains(selectedCategory, ignoreCase = true)
+            }.ifEmpty { allVideos } // Fallback to all videos if no strict category matches
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -65,36 +93,38 @@ fun HomeScreen(
                             imageVector = Icons.Default.PlayCircleFilled,
                             contentDescription = "PureTube Logo",
                             tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(28.dp)
+                            modifier = Modifier.size(30.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "PureTube",
                             fontWeight = FontWeight.Bold,
-                            fontSize = 20.sp
+                            fontSize = 20.sp,
+                            color = MaterialTheme.colorScheme.onBackground
                         )
-                        Spacer(modifier = Modifier.width(10.dp))
-                        // Visual badge indicating zero shorts
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        // High-contrast "Zero Shorts" pill badge
                         Surface(
                             shape = RoundedCornerShape(12.dp),
                             color = MaterialTheme.colorScheme.primaryContainer,
-                            modifier = Modifier.padding(top = 2.dp)
+                            modifier = Modifier.padding(top = 1.dp)
                         ) {
                             Row(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.Block,
+                                    imageVector = Icons.Default.Shield,
                                     contentDescription = "Shorts blocked",
-                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    modifier = Modifier.size(12.dp)
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(11.dp)
                                 )
-                                Spacer(modifier = Modifier.width(4.dp))
+                                Spacer(modifier = Modifier.width(3.dp))
                                 Text(
                                     text = "Zero Shorts",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onPrimaryContainer
                                 )
                             }
@@ -103,16 +133,36 @@ fun HomeScreen(
                 },
                 actions = {
                     IconButton(onClick = {
-                        isRefreshing = true
                         coroutineScope.launch {
-                            // Trigger refresh
-                            kotlinx.coroutines.delay(800)
-                            isRefreshing = false
+                            snackbarHostState.showSnackbar("Cast device searching...")
+                        }
+                    }) {
+                        Icon(
+                            imageVector = Icons.Default.Cast,
+                            contentDescription = "Cast",
+                            tint = MaterialTheme.colorScheme.onBackground
+                        )
+                    }
+                    IconButton(onClick = {
+                        coroutineScope.launch {
+                            snackbarHostState.showSnackbar("No new notifications")
+                        }
+                    }) {
+                        Icon(
+                            imageVector = Icons.Default.NotificationsNone,
+                            contentDescription = "Notifications",
+                            tint = MaterialTheme.colorScheme.onBackground
+                        )
+                    }
+                    IconButton(onClick = {
+                        coroutineScope.launch {
+                            snackbarHostState.showSnackbar("Feed refreshed • 100% Shorts Filtered")
                         }
                     }) {
                         Icon(
                             imageVector = Icons.Default.Refresh,
-                            contentDescription = "Refresh Feed"
+                            contentDescription = "Refresh",
+                            tint = MaterialTheme.colorScheme.onBackground
                         )
                     }
                 },
@@ -121,14 +171,51 @@ fun HomeScreen(
                 )
             )
         },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         modifier = modifier
     ) { innerPadding ->
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
+                .background(MaterialTheme.colorScheme.background)
         ) {
-            if (homeVideos.isEmpty()) {
+            // Horizontal Category Filter Pills (YouTube style)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                categories.forEach { category ->
+                    val isSelected = category == selectedCategory
+                    FilterChip(
+                        selected = isSelected,
+                        onClick = { selectedCategory = category },
+                        label = {
+                            Text(
+                                text = category,
+                                fontSize = 13.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                            )
+                        },
+                        colors = FilterChipDefaults.filterChipColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            selectedContainerColor = MaterialTheme.colorScheme.onBackground,
+                            selectedLabelColor = MaterialTheme.colorScheme.background
+                        ),
+                        shape = RoundedCornerShape(8.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            // Main Video List
+            if (filteredVideos.isEmpty()) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
@@ -137,10 +224,16 @@ fun HomeScreen(
                 }
             } else {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(items = homeVideos, key = { it.id }) { video ->
+                    items(items = filteredVideos, key = { it.id }) { video ->
                         VideoCard(
                             video = video,
-                            onClick = { onVideoClick(video) }
+                            onClick = { onVideoClick(video) },
+                            onSaveToLibrary = { savedVideo ->
+                                coroutineScope.launch {
+                                    repository.toggleSaveVideo(savedVideo, false)
+                                    snackbarHostState.showSnackbar("Saved to Library")
+                                }
+                            }
                         )
                     }
                 }

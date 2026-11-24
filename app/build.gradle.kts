@@ -114,6 +114,9 @@ dependencies {
     // Image loading
     implementation(libs.coil.compose)
 
+    // Android YouTube Player (IFrame bridge with custom controls & 100% video playback)
+    implementation(libs.youtube.player)
+
     // Unit Testing
     testImplementation(libs.junit)
     testImplementation(libs.mockk)

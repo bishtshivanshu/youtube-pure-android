@@ -30,13 +30,13 @@ import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.material.icons.filled.ClosedCaptionDisabled
 import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material.icons.filled.Fullscreen
-import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.NightlightRound
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Replay10
@@ -44,6 +44,8 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -58,6 +60,7 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -76,10 +79,16 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.PlayerView
+import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.PlayerConstants
+import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.YouTubePlayer
+import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.listeners.AbstractYouTubePlayerListener
+import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.options.IFramePlayerOptions
+import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.views.YouTubePlayerView
 import com.puretube.app.core.player.ExoPlayerManager
 import com.puretube.app.core.player.PlayerEngineMode
 import com.puretube.app.domain.model.VideoQuality
 import kotlinx.coroutines.delay
+
 
 @OptIn(UnstableApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -124,20 +133,105 @@ fun VideoPlayerView(
                 )
             }
     ) {
-        // ExoPlayer Surface
-        AndroidView(
-            factory = { context ->
-                PlayerView(context).apply {
-                    player = playerManager.player
-                    useController = false
-                    layoutParams = FrameLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.MATCH_PARENT
+        // Player Surface: Dual-Engine Support (Official YouTube Player vs ExoPlayer)
+        if (uiState.playerEngineMode == PlayerEngineMode.YOUTUBE_PLAYER) {
+            AndroidView(
+                factory = { context ->
+                    val ytpView = YouTubePlayerView(context).apply {
+                        enableAutomaticInitialization = false
+                        layoutParams = FrameLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT
+                        )
+                    }
+                    val options = IFramePlayerOptions.Builder(context)
+                        .controls(1) // Full native YouTube player controls (scrub bar, captions, quality, speed, fullscreen)
+                        .rel(0)
+                        .ivLoadPolicy(3)
+                        .ccLoadPolicy(1)
+                        .fullscreen(1)
+                        .build()
+
+                    ytpView.initialize(object : AbstractYouTubePlayerListener() {
+                        override fun onReady(youTubePlayer: YouTubePlayer) {
+                            playerManager.attachYouTubePlayer(youTubePlayer)
+                            if (uiState.videoId.isNotBlank()) {
+                                youTubePlayer.loadVideo(uiState.videoId, 0f)
+                            }
+                        }
+
+                        override fun onStateChange(youTubePlayer: YouTubePlayer, state: PlayerConstants.PlayerState) {
+                            when (state) {
+                                PlayerConstants.PlayerState.PLAYING -> playerManager.updatePlaybackState(isPlaying = true, isBuffering = false)
+                                PlayerConstants.PlayerState.PAUSED -> playerManager.updatePlaybackState(isPlaying = false, isBuffering = false)
+                                PlayerConstants.PlayerState.BUFFERING -> playerManager.updatePlaybackState(isPlaying = false, isBuffering = true)
+                                PlayerConstants.PlayerState.ENDED -> playerManager.updatePlaybackState(isPlaying = false, isBuffering = false)
+                                else -> {}
+                            }
+                        }
+
+                        override fun onCurrentSecond(youTubePlayer: YouTubePlayer, second: Float) {
+                            playerManager.updateCurrentPosition((second * 1000).toLong())
+                        }
+
+                        override fun onVideoDuration(youTubePlayer: YouTubePlayer, duration: Float) {
+                            playerManager.updateDuration((duration * 1000).toLong())
+                        }
+
+                        override fun onError(youTubePlayer: YouTubePlayer, error: PlayerConstants.PlayerError) {
+                            playerManager.setErrorMessage("Playback note: $error")
+                        }
+                    }, options)
+
+                    ytpView
+                },
+                update = { ytpView ->
+                    if (uiState.videoId.isNotBlank()) {
+                        playerManager.loadVideoInYouTubePlayer(uiState.videoId)
+                    }
+                },
+                modifier = Modifier.fillMaxSize()
+            )
+
+            // PureTube Settings Gear Button (Top right overlay for sleep timer, stats, etc.)
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(8.dp)
+            ) {
+                IconButton(
+                    onClick = {
+                        showSettingsSheet = true
+                        activeSubSheet = null
+                    },
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .size(36.dp)
+                        .background(Color.Black.copy(alpha = 0.55f), CircleShape)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = "PureTube Settings",
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
                     )
                 }
-            },
-            modifier = Modifier.fillMaxSize()
-        )
+            }
+        } else {
+            AndroidView(
+                factory = { context ->
+                    PlayerView(context).apply {
+                        player = playerManager.player
+                        useController = false
+                        layoutParams = FrameLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT
+                        )
+                    }
+                },
+                modifier = Modifier.fillMaxSize()
+            )
+        }
 
         // Buffering Indicator
         if (uiState.isBuffering) {
@@ -145,6 +239,59 @@ fun VideoPlayerView(
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.align(Alignment.Center)
             )
+        }
+
+        // Error Banner & Switch Engine Fallback
+        if (uiState.errorMessage != null && !uiState.isPlaying) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.85f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.padding(16.dp)
+                ) {
+                    Text(
+                        text = "Playback Error",
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.error,
+                        fontSize = 15.sp
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = uiState.errorMessage ?: "Video stream unavailable",
+                        color = Color.White.copy(alpha = 0.8f),
+                        fontSize = 12.sp
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = {
+                                playerManager.setPlayerEngineMode(PlayerEngineMode.YOUTUBE_PLAYER)
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                        ) {
+                            Icon(imageVector = Icons.Default.Tv, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Switch to YouTube Player", fontSize = 12.sp)
+                        }
+
+                        Button(
+                            onClick = {
+                                val currentQuality = uiState.availableQualities.firstOrNull()
+                                if (currentQuality != null) playerManager.switchQuality(currentQuality)
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                        ) {
+                            Icon(imageVector = Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Retry", fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
         }
 
         // Stats for Nerds overlay
@@ -191,7 +338,7 @@ fun VideoPlayerView(
                         .fillMaxSize()
                         .background(Color.Black.copy(alpha = 0.5f))
                 ) {
-                    // Top Bar: CC, Audio Mode, Lock, Settings
+                    // Top Bar: CC, Loop, Lock, Settings
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -470,7 +617,22 @@ fun MainSettingsMenu(
             onClick = onOpenSpeed
         )
 
-        // 3. Captions
+        // 3. Player Engine Mode
+        SettingsMenuItem(
+            icon = if (uiState.playerEngineMode == PlayerEngineMode.YOUTUBE_PLAYER) Icons.Default.Tv else Icons.Default.Videocam,
+            title = "Player Engine",
+            subtitle = if (uiState.playerEngineMode == PlayerEngineMode.YOUTUBE_PLAYER) "YouTube Player (Official 100% Stream)" else "Media3 ExoPlayer",
+            onClick = {
+                val nextMode = if (uiState.playerEngineMode == PlayerEngineMode.YOUTUBE_PLAYER) {
+                    PlayerEngineMode.NATIVE_EXOPLAYER
+                } else {
+                    PlayerEngineMode.YOUTUBE_PLAYER
+                }
+                onTogglePlayerEngine(nextMode)
+            }
+        )
+
+        // 4. Captions
         SettingsToggleItem(
             icon = Icons.Default.ClosedCaption,
             title = "Captions",
@@ -478,7 +640,7 @@ fun MainSettingsMenu(
             onCheckedChange = { onToggleCaptions() }
         )
 
-        // 4. Loop Video
+        // 5. Loop Video
         SettingsToggleItem(
             icon = Icons.Default.Repeat,
             title = "Loop video",
@@ -486,7 +648,7 @@ fun MainSettingsMenu(
             onCheckedChange = { onToggleLoop() }
         )
 
-        // 5. Ambient Mode
+        // 6. Ambient Mode
         SettingsToggleItem(
             icon = Icons.Default.NightlightRound,
             title = "Ambient mode",
@@ -494,7 +656,7 @@ fun MainSettingsMenu(
             onCheckedChange = { onToggleAmbient() }
         )
 
-        // 6. Sleep Timer
+        // 7. Sleep Timer
         SettingsMenuItem(
             icon = Icons.Default.Tv,
             title = "Sleep timer",
@@ -502,7 +664,7 @@ fun MainSettingsMenu(
             onClick = onOpenSleepTimer
         )
 
-        // 7. Stats for Nerds
+        // 8. Stats for Nerds
         SettingsToggleItem(
             icon = Icons.Default.Info,
             title = "Stats for nerds",
@@ -520,11 +682,11 @@ fun QualitySelectionSheet(
 ) {
     val qualities = availableQualities.ifEmpty {
         listOf(
-            VideoQuality("1080p (FHD)", "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"),
-            VideoQuality("720p (HD)", "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4"),
-            VideoQuality("480p (SD)", "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4"),
-            VideoQuality("360p (Data Saver)", "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4"),
-            VideoQuality("Audio Only", "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4")
+            VideoQuality("1080p (FHD)", "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"),
+            VideoQuality("720p (HD)", "https://devstreaming-cdn.apple.com/videos/streaming/examples/bipbop_16x9/bipbop_16x9_variant.m3u8"),
+            VideoQuality("480p (SD)", "https://media.w3.org/2010/05/sintel/trailer.mp4"),
+            VideoQuality("360p (Data Saver)", "https://storage.googleapis.com/exoplayer-test-media-0/BigBuckBunny_320x180.mp4"),
+            VideoQuality("Audio Only", "https://storage.googleapis.com/exoplayer-test-media-0/BigBuckBunny_320x180.mp4")
         )
     }
 
@@ -727,10 +889,10 @@ fun StatsForNerdsBox(
             Text(text = "STATS FOR NERDS", color = Color.Yellow, fontSize = 11.sp, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(4.dp))
             Text(text = "Video ID: ${uiState.videoId.ifBlank { "N/A" }}", color = Color.White, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+            Text(text = "Engine: ${uiState.playerEngineMode.name}", color = Color.White, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
             Text(text = "Resolution: ${uiState.currentQuality}", color = Color.White, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
             Text(text = "Speed: ${uiState.playbackSpeed}x", color = Color.White, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
             Text(text = "Buffer: ${uiState.bufferedPositionMillis / 1000}s", color = Color.White, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
-            Text(text = "Audio: AAC 128kbps stereo", color = Color.White, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
             Text(text = "Shorts Filter: ACTIVE (0 Shorts)", color = Color.Green, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
         }
     }

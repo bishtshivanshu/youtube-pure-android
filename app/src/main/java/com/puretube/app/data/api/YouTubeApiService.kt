@@ -111,17 +111,17 @@ class YouTubeApiService(
      */
     suspend fun resolveStreamInfo(videoId: String): StreamInfo = withContext(Dispatchers.IO) {
         val qualities = listOf(
-            VideoQuality("1080p (FHD)", "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"),
-            VideoQuality("720p (HD)", "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4"),
-            VideoQuality("480p (SD)", "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4"),
-            VideoQuality("360p (Data Saver)", "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4"),
-            VideoQuality("Audio Only", "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4", "audio/mp4")
+            VideoQuality("1080p (FHD)", "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8", "application/x-mpegURL"),
+            VideoQuality("720p (HD)", "https://devstreaming-cdn.apple.com/videos/streaming/examples/bipbop_16x9/bipbop_16x9_variant.m3u8", "application/x-mpegURL"),
+            VideoQuality("480p (SD)", "https://media.w3.org/2010/05/sintel/trailer.mp4", "video/mp4"),
+            VideoQuality("360p (Data Saver)", "https://storage.googleapis.com/exoplayer-test-media-0/BigBuckBunny_320x180.mp4", "video/mp4"),
+            VideoQuality("Audio Only", "https://storage.googleapis.com/exoplayer-test-media-0/BigBuckBunny_320x180.mp4", "audio/mp4")
         )
         StreamInfo(
             videoId = videoId,
             title = "Loading Video...",
             streamUrl = qualities.first().url,
-            isHls = false,
+            isHls = true,
             isDash = false,
             qualities = qualities
         )

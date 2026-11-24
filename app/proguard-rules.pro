@@ -36,3 +36,8 @@
 # Room
 -keep class * extends androidx.room.RoomDatabase
 -dontwarn androidx.room.paging.**
+
+# Android YouTube Player
+-keep class com.pierfrancescosoffritti.androidyoutubeplayer.** { *; }
+-dontwarn com.pierfrancescosoffritti.androidyoutubeplayer.**
+

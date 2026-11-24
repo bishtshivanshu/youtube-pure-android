@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.Bundle
 import android.util.Rational
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedVisibility
@@ -118,6 +119,14 @@ class MainActivity : ComponentActivity() {
         val currentRoute = navBackStackEntry?.destination?.route
 
         val showBottomBar = activeVideo == null && !isFullscreen
+
+        BackHandler(enabled = activeVideo != null) {
+            if (isFullscreen) {
+                toggleOrientationFullscreen()
+            } else {
+                activeVideo = null
+            }
+        }
 
         Scaffold(
             bottomBar = {
