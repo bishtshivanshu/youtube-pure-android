@@ -95,7 +95,7 @@ dependencies {
 
     // Security & Credential Manager
     implementation(libs.androidx.credentials)
-    implementation(libs.androidx.credentials.play-services)
+    implementation(libs.androidx.credentials.play.services)
     implementation(libs.google.android.libraries.identity.googleid)
     implementation(libs.androidx.security.crypto)
 
