@@ -178,7 +178,7 @@ class YouTubeApiServiceTest {
         assertEquals("test_video_123", streamInfo.videoId)
         assertTrue(streamInfo.streamUrl.isNotBlank())
         assertTrue(streamInfo.qualities.isNotEmpty())
-        assertTrue(streamInfo.qualities.any { it.label == "1080p" })
-        assertTrue(streamInfo.qualities.any { it.label == "720p" })
+        assertTrue(streamInfo.qualities.any { it.label.contains("1080p") })
+        assertTrue(streamInfo.qualities.any { it.label.contains("720p") })
     }
 }

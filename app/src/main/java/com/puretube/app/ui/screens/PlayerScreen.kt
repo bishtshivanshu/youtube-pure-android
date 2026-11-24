@@ -1,5 +1,6 @@
 package com.puretube.app.ui.screens
 
+import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -22,13 +23,14 @@ import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.ThumbDown
 import androidx.compose.material.icons.filled.ThumbUp
+import androidx.compose.material.icons.outlined.ThumbDown
 import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Divider
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -45,6 +47,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -66,12 +69,21 @@ fun PlayerScreen(
     onToggleFullscreen: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     var isLiked by remember { mutableStateOf(false) }
+    var isDisliked by remember { mutableStateOf(false) }
     var isSaved by remember { mutableStateOf(false) }
     var isSubscribed by remember { mutableStateOf(false) }
+    var isDescriptionExpanded by remember { mutableStateOf(false) }
+    var isAudioOnlyMode by remember { mutableStateOf(false) }
 
     val relatedVideos by repository.getHomeFeed().collectAsState(initial = emptyList())
+    val isSavedInDb by repository.isVideoSaved(video.id).collectAsState(initial = false)
+
+    LaunchedEffect(isSavedInDb) {
+        isSaved = isSavedInDb
+    }
 
     // Load stream and record watch history
     LaunchedEffect(video.id) {
@@ -80,7 +92,9 @@ fun PlayerScreen(
             playerManager.playStream(
                 videoId = video.id,
                 title = video.title,
-                streamUrl = streamInfo.streamUrl
+                streamUrl = streamInfo.streamUrl,
+                qualities = streamInfo.qualities,
+                initialQuality = streamInfo.qualities.firstOrNull()?.label ?: "1080p"
             )
         }
     }
@@ -113,25 +127,49 @@ fun PlayerScreen(
                     color = MaterialTheme.colorScheme.onBackground
                 )
 
-                // Views & Date
+                // Views & Date (Clickable description card)
                 val metaText = buildString {
                     if (video.viewCountFormatted.isNotBlank()) append("${video.viewCountFormatted} • ")
                     if (video.publishedAtFormatted.isNotBlank()) append(video.publishedAtFormatted)
                 }
-                if (metaText.isNotBlank()) {
-                    Text(
-                        text = metaText,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
-                        modifier = Modifier.padding(vertical = 4.dp)
-                    )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 6.dp)
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                        .clickable { isDescriptionExpanded = !isDescriptionExpanded }
+                        .padding(10.dp)
+                ) {
+                    Column {
+                        Text(
+                            text = metaText.ifBlank { "YouTube Video • PureTube No-Shorts Edition" },
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        if (isDescriptionExpanded) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = video.description.ifBlank { "Enjoy full-length, uninterrupted content. All recommendations, reels, and Shorts have been strictly removed." },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
+                            )
+                        } else {
+                            Text(
+                                text = "...more",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
                 }
 
                 // Channel Row & Subscribe
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 10.dp),
+                        .padding(vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     if (!video.channelAvatarUrl.isNullOrBlank()) {
@@ -191,97 +229,153 @@ fun PlayerScreen(
                     }
                 }
 
-                // Action Bar: Like, Save, Background Audio
+                // Action Bar: Like, Dislike, Share, Save, Background Audio
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(vertical = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceAround
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Like
+                    // Like & Dislike Pill
                     Surface(
                         shape = RoundedCornerShape(20.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        modifier = Modifier.clickable { isLiked = !isLiked }
+                        color = MaterialTheme.colorScheme.surfaceVariant
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
                         ) {
+                            Row(
+                                modifier = Modifier
+                                    .clickable {
+                                        isLiked = !isLiked
+                                        if (isLiked) isDisliked = false
+                                    }
+                                    .padding(horizontal = 6.dp, vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = if (isLiked) Icons.Filled.ThumbUp else Icons.Outlined.ThumbUp,
+                                    contentDescription = "Like",
+                                    tint = if (isLiked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(if (isLiked) "Liked" else "Like", fontSize = 12.sp)
+                            }
+
+                            Text(" | ", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
+
                             Icon(
-                                imageVector = if (isLiked) Icons.Filled.ThumbUp else Icons.Outlined.ThumbUp,
-                                contentDescription = "Like",
-                                modifier = Modifier.size(18.dp)
+                                imageVector = if (isDisliked) Icons.Filled.ThumbDown else Icons.Outlined.ThumbDown,
+                                contentDescription = "Dislike",
+                                tint = if (isDisliked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier
+                                    .size(18.dp)
+                                    .clickable {
+                                        isDisliked = !isDisliked
+                                        if (isDisliked) isLiked = false
+                                    }
                             )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(if (isLiked) "Liked" else "Like", fontSize = 13.sp)
                         }
                     }
 
-                    // Save / Bookmark
+                    // Share Button
                     Surface(
                         shape = RoundedCornerShape(20.dp),
                         color = MaterialTheme.colorScheme.surfaceVariant,
                         modifier = Modifier.clickable {
-                            isSaved = !isSaved
+                            val sendIntent = Intent().apply {
+                                action = Intent.ACTION_SEND
+                                putExtra(Intent.EXTRA_TEXT, "https://www.youtube.com/watch?v=${video.id}")
+                                type = "text/plain"
+                            }
+                            context.startActivity(Intent.createChooser(sendIntent, "Share Video"))
+                        }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(imageVector = Icons.Default.Share, contentDescription = "Share", modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Share", fontSize = 12.sp)
+                        }
+                    }
+
+                    // Save Button
+                    Surface(
+                        shape = RoundedCornerShape(20.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        modifier = Modifier.clickable {
                             coroutineScope.launch {
-                                repository.toggleSaveVideo(video, isLiked = false)
+                                repository.toggleSaveVideo(video, isLiked)
+                                isSaved = !isSaved
                             }
                         }
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
                                 imageVector = if (isSaved) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
                                 contentDescription = "Save",
+                                tint = if (isSaved) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(18.dp)
                             )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(if (isSaved) "Saved" else "Save", fontSize = 13.sp)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(if (isSaved) "Saved" else "Save", fontSize = 12.sp)
                         }
                     }
 
-                    // Background Audio Mode
+                    // Audio Mode
                     Surface(
                         shape = RoundedCornerShape(20.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        color = if (isAudioOnlyMode) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
                         modifier = Modifier.clickable {
-                            // Audio continues in background automatically via PureTubePlaybackService
+                            isAudioOnlyMode = !isAudioOnlyMode
+                            val audioQuality = playerManager.uiState.value.availableQualities.find {
+                                it.label.contains("Audio", ignoreCase = true)
+                            }
+                            if (isAudioOnlyMode && audioQuality != null) {
+                                playerManager.switchQuality(audioQuality)
+                            }
                         }
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Headphones,
-                                contentDescription = "Audio Only",
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Audio Mode", fontSize = 13.sp)
+                            Icon(imageVector = Icons.Default.Headphones, contentDescription = "Audio Mode", modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(if (isAudioOnlyMode) "Audio On" else "Audio", fontSize = 12.sp)
                         }
                     }
                 }
 
-                Divider(modifier = Modifier.padding(vertical = 12.dp))
+                Spacer(modifier = Modifier.height(10.dp))
+                HorizontalDivider()
+                Spacer(modifier = Modifier.height(12.dp))
 
+                // Up Next Header (Guaranteed No Shorts)
                 Text(
-                    text = "Up Next (Shorts Filtered)",
+                    text = "Up Next (100% Shorts Filtered)",
+                    style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
-                    modifier = Modifier.padding(bottom = 8.dp)
+                    color = MaterialTheme.colorScheme.onBackground
                 )
+                Spacer(modifier = Modifier.height(8.dp))
             }
 
-            // Related Videos (Strictly filtered, no shorts)
-            val filteredRelated = relatedVideos.filter { it.id != video.id }
-            items(items = filteredRelated, key = { it.id }) { relatedVideo ->
+            // Related Videos List (Excludes current video and guarantees 0 Shorts)
+            val filteredRelated = relatedVideos.filter { it.id != video.id && !it.isShort }
+            items(filteredRelated) { relatedVideo ->
                 VideoCard(
                     video = relatedVideo,
-                    onClick = { onRelatedVideoClick(relatedVideo) }
+                    onClick = { onRelatedVideoClick(relatedVideo) },
+                    modifier = Modifier.padding(vertical = 6.dp)
                 )
             }
         }

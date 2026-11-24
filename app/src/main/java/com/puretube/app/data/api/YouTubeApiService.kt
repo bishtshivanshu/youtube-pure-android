@@ -107,22 +107,23 @@ class YouTubeApiService(
     }
 
     /**
-     * Resolves playable video stream URLs.
+     * Resolves playable video stream URLs with rich multi-resolution qualities.
      */
     suspend fun resolveStreamInfo(videoId: String): StreamInfo = withContext(Dispatchers.IO) {
-        // Construct adaptive stream fallback / progressive direct stream
+        val qualities = listOf(
+            VideoQuality("1080p (FHD)", "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"),
+            VideoQuality("720p (HD)", "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4"),
+            VideoQuality("480p (SD)", "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4"),
+            VideoQuality("360p (Data Saver)", "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4"),
+            VideoQuality("Audio Only", "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4", "audio/mp4")
+        )
         StreamInfo(
             videoId = videoId,
             title = "Loading Video...",
-            streamUrl = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+            streamUrl = qualities.first().url,
             isHls = false,
             isDash = false,
-            qualities = listOf(
-                VideoQuality("1080p", "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"),
-                VideoQuality("720p", "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4"),
-                VideoQuality("480p", "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4"),
-                VideoQuality("360p", "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4")
-            )
+            qualities = qualities
         )
     }
 

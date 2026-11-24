@@ -34,7 +34,14 @@ class SecureStorageManager(context: Context) {
         private const val KEY_USER_EMAIL = "sec_user_email"
         private const val KEY_USER_AVATAR = "sec_user_avatar"
         private const val KEY_CUSTOM_API_KEY = "sec_custom_api_key"
+        private const val KEY_WEB_CLIENT_ID = "sec_web_client_id"
     }
+
+    fun saveWebClientId(clientId: String) {
+        sharedPreferences.edit().putString(KEY_WEB_CLIENT_ID, clientId).apply()
+    }
+
+    fun getWebClientId(): String? = sharedPreferences.getString(KEY_WEB_CLIENT_ID, null)
 
     fun saveTokens(accessToken: String, refreshToken: String? = null, expiresInSeconds: Long = 3600) {
         val expiryTimeMillis = System.currentTimeMillis() + (expiresInSeconds * 1000)

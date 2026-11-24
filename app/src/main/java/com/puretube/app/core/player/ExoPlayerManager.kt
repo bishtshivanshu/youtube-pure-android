@@ -7,6 +7,7 @@ import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import com.puretube.app.domain.model.VideoQuality
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -17,6 +18,11 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
+enum class PlayerEngineMode {
+    NATIVE_EXOPLAYER,
+    WEB_EMBED
+}
+
 data class PlayerUiState(
     val isPlaying: Boolean = false,
     val currentPositionMillis: Long = 0L,
@@ -24,9 +30,18 @@ data class PlayerUiState(
     val bufferedPositionMillis: Long = 0L,
     val playbackSpeed: Float = 1.0f,
     val isBuffering: Boolean = false,
-    val currentQuality: String = "Auto",
+    val currentQuality: String = "1080p",
+    val availableQualities: List<VideoQuality> = emptyList(),
     val title: String = "",
-    val videoId: String = ""
+    val videoId: String = "",
+    val isLooping: Boolean = false,
+    val isMuted: Boolean = false,
+    val captionsEnabled: Boolean = false,
+    val ambientModeEnabled: Boolean = true,
+    val statsForNerdsVisible: Boolean = false,
+    val touchControlsLocked: Boolean = false,
+    val sleepTimerMinutes: Int = 0,
+    val playerEngineMode: PlayerEngineMode = PlayerEngineMode.NATIVE_EXOPLAYER
 )
 
 @OptIn(UnstableApi::class)
@@ -40,6 +55,7 @@ class ExoPlayerManager(
     val uiState: StateFlow<PlayerUiState> = _uiState.asStateFlow()
 
     private var progressJob: Job? = null
+    private var sleepTimerJob: Job? = null
 
     init {
         player.addListener(object : Player.Listener {
@@ -63,7 +79,13 @@ class ExoPlayerManager(
         })
     }
 
-    fun playStream(videoId: String, title: String, streamUrl: String) {
+    fun playStream(
+        videoId: String,
+        title: String,
+        streamUrl: String,
+        qualities: List<VideoQuality> = emptyList(),
+        initialQuality: String = "1080p"
+    ) {
         val mediaItem = MediaItem.fromUri(streamUrl)
         player.setMediaItem(mediaItem)
         player.prepare()
@@ -71,7 +93,9 @@ class ExoPlayerManager(
 
         _uiState.value = _uiState.value.copy(
             videoId = videoId,
-            title = title
+            title = title,
+            availableQualities = qualities,
+            currentQuality = initialQuality
         )
     }
 
@@ -98,6 +122,66 @@ class ExoPlayerManager(
         _uiState.value = _uiState.value.copy(playbackSpeed = speed)
     }
 
+    fun switchQuality(quality: VideoQuality) {
+        val currentPos = player.currentPosition
+        val wasPlaying = player.isPlaying
+
+        val mediaItem = MediaItem.fromUri(quality.url)
+        player.setMediaItem(mediaItem)
+        player.prepare()
+        player.seekTo(currentPos)
+        player.playWhenReady = wasPlaying
+
+        _uiState.value = _uiState.value.copy(currentQuality = quality.label)
+    }
+
+    fun toggleLoop() {
+        val newLoopState = !_uiState.value.isLooping
+        player.repeatMode = if (newLoopState) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
+        _uiState.value = _uiState.value.copy(isLooping = newLoopState)
+    }
+
+    fun toggleMute() {
+        val newMute = !_uiState.value.isMuted
+        player.volume = if (newMute) 0f else 1f
+        _uiState.value = _uiState.value.copy(isMuted = newMute)
+    }
+
+    fun toggleCaptions() {
+        _uiState.value = _uiState.value.copy(captionsEnabled = !_uiState.value.captionsEnabled)
+    }
+
+    fun toggleAmbientMode() {
+        _uiState.value = _uiState.value.copy(ambientModeEnabled = !_uiState.value.ambientModeEnabled)
+    }
+
+    fun toggleStatsForNerds() {
+        _uiState.value = _uiState.value.copy(statsForNerdsVisible = !_uiState.value.statsForNerdsVisible)
+    }
+
+    fun toggleTouchLock() {
+        _uiState.value = _uiState.value.copy(touchControlsLocked = !_uiState.value.touchControlsLocked)
+    }
+
+    fun setPlayerEngineMode(mode: PlayerEngineMode) {
+        if (mode == PlayerEngineMode.WEB_EMBED) {
+            player.pause()
+        }
+        _uiState.value = _uiState.value.copy(playerEngineMode = mode)
+    }
+
+    fun setSleepTimer(minutes: Int) {
+        sleepTimerJob?.cancel()
+        _uiState.value = _uiState.value.copy(sleepTimerMinutes = minutes)
+        if (minutes > 0) {
+            sleepTimerJob = coroutineScope.launch {
+                delay(minutes * 60 * 1000L)
+                player.pause()
+                _uiState.value = _uiState.value.copy(sleepTimerMinutes = 0, isPlaying = false)
+            }
+        }
+    }
+
     private fun startProgressTracker() {
         progressJob?.cancel()
         progressJob = coroutineScope.launch {
@@ -122,6 +206,7 @@ class ExoPlayerManager(
 
     fun release() {
         stopProgressTracker()
+        sleepTimerJob?.cancel()
         player.release()
     }
 }

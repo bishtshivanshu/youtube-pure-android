@@ -28,6 +28,7 @@ sealed class AuthResult {
  * 1. Generating cryptographically secure nonces via SecureRandom & SHA-256 to prevent replay attacks.
  * 2. Utilizing hardware-isolated biometric / credential prompts.
  * 3. Delegating token storage to hardware-backed SecureStorageManager.
+ * 4. Providing seamless custom Google account and API key onboarding.
  */
 class GoogleAuthManager(
     private val context: Context,
@@ -36,10 +37,15 @@ class GoogleAuthManager(
     private val credentialManager = CredentialManager.create(context)
     private val secureRandom = SecureRandom()
 
-    // Default Web Client ID (Can be configured in App Settings / Secrets)
     private var webClientId: String = "YOUR_GOOGLE_WEB_CLIENT_ID.apps.googleusercontent.com"
 
+    fun getActiveWebClientId(): String? {
+        val stored = secureStorage.getWebClientId()
+        return if (!stored.isNullOrBlank()) stored else if (!webClientId.startsWith("YOUR_GOOGLE")) webClientId else null
+    }
+
     fun setWebClientId(clientId: String) {
+        secureStorage.saveWebClientId(clientId)
         this.webClientId = clientId
     }
 
@@ -51,12 +57,19 @@ class GoogleAuthManager(
     }
 
     suspend fun signIn(activityContext: Context): AuthResult = withContext(Dispatchers.IO) {
+        val activeClientId = getActiveWebClientId()
+        if (activeClientId.isNullOrBlank()) {
+            return@withContext AuthResult.Error(
+                "Google Web Client ID is not configured. Please tap 'Configure Client ID / API Key' or use 'Quick Google Sign In'."
+            )
+        }
+
         try {
             val nonce = generateSecureNonce()
 
             val googleIdOption = GetGoogleIdOption.Builder()
                 .setFilterByAuthorizedAccounts(false)
-                .setServerClientId(webClientId)
+                .setServerClientId(activeClientId)
                 .setAutoSelectEnabled(false)
                 .setNonce(nonce)
                 .build()
@@ -73,15 +86,15 @@ class GoogleAuthManager(
             val credential = response.credential
             if (credential is CustomCredential && credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
                 val googleIdTokenCredential = GoogleIdTokenCredential.createFrom(credential.data)
-                
+
                 val profile = UserProfile(
                     id = googleIdTokenCredential.id,
                     displayName = googleIdTokenCredential.displayName ?: googleIdTokenCredential.id,
-                    email = googleIdTokenCredential.id, // Primary identifier in Google ID is often email
+                    email = googleIdTokenCredential.id,
                     avatarUrl = googleIdTokenCredential.profilePictureUri?.toString()
                 )
 
-                // Persist securely
+                // Persist securely in KeyStore AES-256 GCM
                 secureStorage.saveUserProfile(
                     id = profile.id,
                     name = profile.displayName,
@@ -106,6 +119,28 @@ class GoogleAuthManager(
         }
     }
 
+    fun signInWithCustomProfile(name: String, email: String, avatarUrl: String? = null): AuthResult {
+        val id = "user_" + email.replace(Regex("[^a-zA-Z0-9]"), "_")
+        val profile = UserProfile(
+            id = id,
+            displayName = name.ifBlank { email.substringBefore("@") },
+            email = email,
+            avatarUrl = avatarUrl
+        )
+        secureStorage.saveUserProfile(
+            id = profile.id,
+            name = profile.displayName,
+            email = profile.email,
+            avatarUrl = profile.avatarUrl
+        )
+        val token = "sec_local_token_" + generateSecureNonce()
+        secureStorage.saveTokens(
+            accessToken = token,
+            expiresInSeconds = 30 * 86400L // 30 days
+        )
+        return AuthResult.Success(profile, token)
+    }
+
     suspend fun signOut(): Boolean = withContext(Dispatchers.IO) {
         try {
             credentialManager.clearCredentialState(ClearCredentialStateRequest())
@@ -118,4 +153,6 @@ class GoogleAuthManager(
 
     fun isUserLoggedIn(): Boolean = secureStorage.isLoggedIn()
     fun getCurrentUser(): UserProfile? = secureStorage.getUserProfile()
+    fun getCustomApiKey(): String? = secureStorage.getCustomApiKey()
+    fun saveCustomApiKey(apiKey: String) = secureStorage.saveCustomApiKey(apiKey)
 }
