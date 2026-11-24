@@ -1,0 +1,8 @@
+<resources>
+    <string name="app_name">PureTube</string>
+    <string name="nav_home">Home</string>
+    <string name="nav_subscriptions">Subscriptions</string>
+    <string name="nav_search">Search</string>
+    <string name="nav_library">Library</string>
+    <string name="shorts_filter_tagline">Pure long-form video experience — 100% Shorts free.</string>
+</resources>
