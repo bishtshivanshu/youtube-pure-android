@@ -178,7 +178,16 @@ class MainActivity : ComponentActivity() {
                     composable(Screen.Home.route) {
                         HomeScreen(
                             repository = app.youtubeRepository,
-                            onVideoClick = { video -> activeVideo = video }
+                            onVideoClick = { video -> activeVideo = video },
+                            onSearchClick = {
+                                navController.navigate(Screen.Search.route) {
+                                    popUpTo(navController.graph.findStartDestination().id) {
+                                        saveState = true
+                                    }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
+                            }
                         )
                     }
 
@@ -192,7 +201,16 @@ class MainActivity : ComponentActivity() {
                     composable(Screen.Search.route) {
                         SearchScreen(
                             repository = app.youtubeRepository,
-                            onVideoClick = { video -> activeVideo = video }
+                            onVideoClick = { video -> activeVideo = video },
+                            onBackClick = {
+                                navController.navigate(Screen.Home.route) {
+                                    popUpTo(navController.graph.findStartDestination().id) {
+                                        saveState = true
+                                    }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
+                            }
                         )
                     }
 

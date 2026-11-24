@@ -32,6 +32,31 @@ class YouTubeApiService(
     companion object {
         private const val INNERTUBE_API_BASE = "https://www.youtube.com/youtubei/v1"
         private const val YOUTUBE_DATA_API_BASE = "https://www.googleapis.com/youtube/v3"
+        private const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        private const val CLIENT_VERSION = "2.20240101.00.00"
+    }
+
+    /**
+     * Extracts an 11-character video ID from raw text, standard URLs, or youtu.be links.
+     */
+    fun extractVideoId(input: String): String? {
+        val trimmed = input.trim()
+        if (trimmed.length == 11 && trimmed.matches(Regex("^[a-zA-Z0-9_-]{11}$"))) {
+            return trimmed
+        }
+        if (trimmed.contains("watch?v=")) {
+            val id = trimmed.substringAfter("watch?v=").substringBefore("&").substringBefore("?")
+            if (id.length == 11) return id
+        }
+        if (trimmed.contains("youtu.be/")) {
+            val id = trimmed.substringAfter("youtu.be/").substringBefore("?").substringBefore("&")
+            if (id.length == 11) return id
+        }
+        if (trimmed.contains("/shorts/")) {
+            val id = trimmed.substringAfter("/shorts/").substringBefore("?").substringBefore("&")
+            if (id.length == 11) return id
+        }
+        return null
     }
 
     /**
@@ -43,7 +68,7 @@ class YouTubeApiService(
               "context": {
                 "client": {
                   "clientName": "WEB",
-                  "clientVersion": "2.20241100.00.00",
+                  "clientVersion": "$CLIENT_VERSION",
                   "hl": "en",
                   "gl": "US"
                 }
@@ -54,6 +79,11 @@ class YouTubeApiService(
 
         val request = Request.Builder()
             .url("$INNERTUBE_API_BASE/browse")
+            .header("User-Agent", USER_AGENT)
+            .header("Content-Type", "application/json")
+            .header("X-YouTube-Client-Name", "1")
+            .header("X-YouTube-Client-Version", CLIENT_VERSION)
+            .header("Origin", "https://www.youtube.com")
             .post(payload.toRequestBody(jsonMediaType))
             .build()
 
@@ -61,7 +91,8 @@ class YouTubeApiService(
             val response = okHttpClient.newCall(request).execute()
             if (response.isSuccessful) {
                 val bodyString = response.body?.string() ?: ""
-                parseInnerTubeFeed(bodyString)
+                val parsed = parseInnerTubeFeed(bodyString)
+                if (parsed.isNotEmpty()) parsed else getCuratedFallbackFeed()
             } else {
                 getCuratedFallbackFeed()
             }
@@ -72,24 +103,54 @@ class YouTubeApiService(
 
     /**
      * Fetches search results for a given query, completely stripping shorts.
+     * Supports direct video URL/ID lookup as well as keyword searching.
      */
     suspend fun searchVideos(query: String): List<VideoItem> = withContext(Dispatchers.IO) {
+        val trimmedQuery = query.trim()
+        if (trimmedQuery.isBlank()) return@withContext emptyList()
+
+        val directVideoId = extractVideoId(trimmedQuery)
+        val results = mutableListOf<VideoItem>()
+
+        if (directVideoId != null) {
+            // Direct video match from pasted URL or video ID
+            results.add(
+                VideoItem(
+                    id = directVideoId,
+                    title = "Direct Video Match: $directVideoId",
+                    channelId = "youtube",
+                    channelTitle = "YouTube Video",
+                    thumbnailUrl = "https://i.ytimg.com/vi/$directVideoId/hqdefault.jpg",
+                    durationSeconds = 300,
+                    durationFormatted = "Full Video",
+                    viewCountFormatted = "Ready to Play",
+                    publishedAtFormatted = "Direct Link",
+                    isShort = false
+                )
+            )
+        }
+
         val payload = """
             {
               "context": {
                 "client": {
                   "clientName": "WEB",
-                  "clientVersion": "2.20241100.00.00",
+                  "clientVersion": "$CLIENT_VERSION",
                   "hl": "en",
                   "gl": "US"
                 }
               },
-              "query": "$query"
+              "query": "$trimmedQuery"
             }
         """.trimIndent()
 
         val request = Request.Builder()
             .url("$INNERTUBE_API_BASE/search")
+            .header("User-Agent", USER_AGENT)
+            .header("Content-Type", "application/json")
+            .header("X-YouTube-Client-Name", "1")
+            .header("X-YouTube-Client-Version", CLIENT_VERSION)
+            .header("Origin", "https://www.youtube.com")
             .post(payload.toRequestBody(jsonMediaType))
             .build()
 
@@ -97,13 +158,23 @@ class YouTubeApiService(
             val response = okHttpClient.newCall(request).execute()
             if (response.isSuccessful) {
                 val bodyString = response.body?.string() ?: ""
-                parseInnerTubeFeed(bodyString)
-            } else {
-                emptyList()
+                val parsedVideos = parseInnerTubeFeed(bodyString)
+                results.addAll(parsedVideos)
             }
         } catch (e: Exception) {
-            emptyList()
+            // Network fallback
         }
+
+        // If online search returned no results, search fallback curated list
+        if (results.isEmpty()) {
+            val fallbackMatches = getCuratedFallbackFeed().filter {
+                it.title.contains(trimmedQuery, ignoreCase = true) ||
+                it.channelTitle.contains(trimmedQuery, ignoreCase = true)
+            }
+            results.addAll(fallbackMatches)
+        }
+
+        shortsFilterEngine.sanitizeList(results.distinctBy { it.id })
     }
 
     /**

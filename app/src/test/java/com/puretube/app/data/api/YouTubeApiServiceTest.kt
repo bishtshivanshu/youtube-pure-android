@@ -172,6 +172,24 @@ class YouTubeApiServiceTest {
     }
 
     @Test
+    fun `extractVideoId correctly parses various YouTube URL formats`() {
+        assertEquals("dQw4w9WgXcQ", apiService.extractVideoId("dQw4w9WgXcQ"))
+        assertEquals("dQw4w9WgXcQ", apiService.extractVideoId("https://www.youtube.com/watch?v=dQw4w9WgXcQ"))
+        assertEquals("dQw4w9WgXcQ", apiService.extractVideoId("https://youtu.be/dQw4w9WgXcQ?t=42"))
+        assertEquals("dQw4w9WgXcQ", apiService.extractVideoId("https://www.youtube.com/shorts/dQw4w9WgXcQ"))
+    }
+
+    @Test
+    fun `searchVideos with direct video URL returns direct video match immediately`() = runBlocking {
+        every { call.execute() } throws java.io.IOException("Offline")
+
+        val results = apiService.searchVideos("https://youtu.be/dQw4w9WgXcQ")
+
+        assertTrue(results.isNotEmpty())
+        assertEquals("dQw4w9WgXcQ", results[0].id)
+    }
+
+    @Test
     fun `resolveStreamInfo returns playable stream with multiple qualities`() = runBlocking {
         val streamInfo = apiService.resolveStreamInfo("test_video_123")
 
