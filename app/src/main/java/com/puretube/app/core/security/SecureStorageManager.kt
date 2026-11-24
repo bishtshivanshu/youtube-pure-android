@@ -13,7 +13,7 @@ class SecureStorageManager(context: Context) {
 
     private val masterKey: MasterKey = MasterKey.Builder(context)
         .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-        .setRequestStrongBoxed(false) // Fallback gracefully if hardware StrongBox is absent
+        .setRequestStrongBoxBacked(false) // Fallback gracefully if hardware StrongBox is absent
         .build()
 
     private val sharedPreferences: SharedPreferences = EncryptedSharedPreferences.create(
